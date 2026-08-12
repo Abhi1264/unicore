@@ -1,0 +1,175 @@
+# Local stack. Defaults are public and rejected when APP_ENV=production.
+# Datastore + app ports bind to 127.0.0.1.
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-unicore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-unicore}
+      POSTGRES_DB: ${POSTGRES_DB:-unicore}
+      # Consumed by init.sh to give the unprivileged runtime role a password.
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:-dev-only-app-db-password}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-unicore} -d ${POSTGRES_DB:-unicore}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  nats:
+    image: nats:2.10.20-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "127.0.0.1:4222:4222"
+      - "127.0.0.1:8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  api: &api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    environment: &api-env
+      APP_ENV: ${APP_ENV:-development}
+      APP_BASE_DOMAIN: ${APP_BASE_DOMAIN:-localhost}
+      API_ADDR: ":8080"
+      PLATFORM_HOST: ${PLATFORM_HOST:-app.localhost}
+      # The API connects as unicore_app, which is NOSUPERUSER NOBYPASSRLS.
+      # Connecting as the owner would silently switch off every RLS policy, so
+      # the owner URL is used only to run migrations.
+      DATABASE_URL: postgres://unicore_app:${APP_DB_PASSWORD:-dev-only-app-db-password}@postgres:5432/${POSTGRES_DB:-unicore}?sslmode=disable
+      DATABASE_MIGRATE_URL: postgres://${POSTGRES_USER:-unicore}:${POSTGRES_PASSWORD:-unicore}@postgres:5432/${POSTGRES_DB:-unicore}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-only-access-secret-not-for-production-0001}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-only-refresh-secret-not-for-production-0002}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-168h}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev-only-payment-webhook-secret-not-for-production}
+      METRICS_TOKEN: ${METRICS_TOKEN:-dev-only-metrics-token-not-for-production}
+      STORAGE_PATH: /data/storage
+      MIGRATIONS_PATH: /app/migrations
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://app.localhost:3000}
+      RATE_LIMIT_IP: ${RATE_LIMIT_IP:-100}
+      RATE_LIMIT_USER: ${RATE_LIMIT_USER:-60}
+      RATE_LIMIT_WRITE: ${RATE_LIMIT_WRITE:-10}
+      RATE_LIMIT_WINDOW: ${RATE_LIMIT_WINDOW:-1m}
+      RATE_LIMIT_AUTH_IP: ${RATE_LIMIT_AUTH_IP:-10}
+      RATE_LIMIT_AUTH_WINDOW: ${RATE_LIMIT_AUTH_WINDOW:-15m}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - storage-data:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    <<: *api
+    command: ["/app/worker"]
+    environment:
+      <<: *api-env
+    ports: []
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: runtime
+    environment:
+      # Both are baked into the client bundle. Nothing secret may go here.
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NEXT_PUBLIC_BASE_DOMAIN: ${NEXT_PUBLIC_BASE_DOMAIN:-localhost}
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    profiles: ["observability"]
+    volumes:
+      - ./infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      - api
+    security_opt:
+      - no-new-privileges:true
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-data:
+  redis-data:
+  storage-data:
+  prometheus-data:
+  grafana-data:

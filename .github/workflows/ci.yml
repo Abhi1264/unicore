@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16.4-alpine
+        env:
+          POSTGRES_USER: unicore
+          POSTGRES_PASSWORD: unicore
+          POSTGRES_DB: unicore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U unicore -d unicore"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: development
+      DATABASE_MIGRATE_URL: postgres://unicore:unicore@localhost:5432/unicore?sslmode=disable
+      DATABASE_URL: postgres://unicore_app:dev-only-app-db-password@localhost:5432/unicore?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+      - name: Create app role
+        working-directory: .
+        run: |
+          PGPASSWORD=unicore psql -h localhost -U unicore -d unicore -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'unicore_app') THEN
+              CREATE ROLE unicore_app LOGIN PASSWORD 'dev-only-app-db-password'
+                NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+            END IF;
+          END $$;
+          GRANT CONNECT ON DATABASE unicore TO unicore_app;
+          GRANT USAGE ON SCHEMA public TO unicore_app;
+          SQL
+      - name: Vet
+        run: go vet ./...
+      - name: Unit tests
+        run: go test ./internal/handlers/ ./internal/middleware/ ./internal/config/ ./internal/auth/ ./internal/pdf/ -count=1
+      - name: Integration tests
+        run: go test ./internal/db/ ./internal/services/ -count=1 -timeout 5m
+      - name: Build
+        run: go build -o /tmp/unicore-server ./cmd/server && go build -o /tmp/unicore-worker ./cmd/worker
+      - name: sqlc diff
+        run: |
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
+          sqlc diff
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web lint
+      - run: pnpm --filter web typecheck
+      - run: pnpm --filter web build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+          NEXT_PUBLIC_BASE_DOMAIN: localhost

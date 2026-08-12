@@ -1,0 +1,19 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: unicore-api
+    metrics_path: /metrics
+    # /metrics is guarded by METRICS_TOKEN. The value below is the public
+    # development default from docker-compose; a real deployment should keep the
+    # token out of this file and point at one with `credentials_file` instead.
+    authorization:
+      type: Bearer
+      credentials: dev-only-metrics-token-not-for-production
+    static_configs:
+      - targets:
+          - api:8080
+        labels:
+          service: api
+          env: local

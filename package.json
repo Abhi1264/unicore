@@ -1,0 +1,21 @@
+{
+  "name": "unicore",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "lint:web": "pnpm --filter web lint",
+    "test:web": "pnpm --filter web test",
+    "audit": "pnpm audit --audit-level=moderate",
+    "dev": "docker compose up --build"
+  },
+  "packageManager": "pnpm@10.32.1",
+  "overridesRationale": {
+    "serialize-javascript": "Reaches us only at build time via @ducanh2912/next-pwa > workbox-build > @rollup/plugin-terser, which pins an old range. GHSA-5c6j-r48x-rmvq (RCE) and GHSA-qj8w-gfj5-8c6v (DoS) are both fixed in 7.0.5. Drop this override once the PWA plugin updates its own dependency."
+  },
+  "pnpm": {
+    "overrides": {
+      "serialize-javascript": ">=7.0.5"
+    }
+  }
+}

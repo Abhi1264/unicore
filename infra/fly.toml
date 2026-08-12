@@ -1,0 +1,47 @@
+# Unicore API — Fly.io
+
+# Create the app once: fly apps create unicore-api
+# Set secrets: fly secrets set DATABASE_URL=... JWT_ACCESS_SECRET=... JWT_REFRESH_SECRET=...
+
+app = "unicore-api"
+primary_region = "iad"
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+  # Build context is the monorepo root when deploying from repo root:
+  #   fly deploy --config infra/fly.toml --dockerfile apps/api/Dockerfile
+
+[env]
+  APP_ENV = "production"
+  API_ADDR = ":8080"
+  APP_BASE_DOMAIN = "unicore.app"
+  PLATFORM_HOST = "app.unicore.app"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+[metrics]
+  port = 8080
+  path = "/metrics"
