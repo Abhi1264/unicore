@@ -63,7 +63,11 @@ func (h *AnnouncementsHandler) List(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	list, err := h.svc.List(c.Context(), tenantID, 50)
+	claims, err := requireClaims(c)
+	if err != nil {
+		return err
+	}
+	list, err := h.svc.ListForViewer(c.Context(), tenantID, claims.UserID, claims.Role, 50)
 	if err != nil {
 		return mapSvcError(c, err)
 	}

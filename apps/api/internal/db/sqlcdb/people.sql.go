@@ -7,10 +7,81 @@ package sqlcdb
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const assignCourseInstructor = `-- name: AssignCourseInstructor :one
+INSERT INTO course_instructors (tenant_id, course_id, faculty_id, semester)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (tenant_id, course_id, faculty_id, semester) DO UPDATE SET semester = EXCLUDED.semester
+RETURNING id, tenant_id, course_id, faculty_id, semester, created_at
+`
+
+type AssignCourseInstructorParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CourseID  uuid.UUID `json:"course_id"`
+	FacultyID uuid.UUID `json:"faculty_id"`
+	Semester  string    `json:"semester"`
+}
+
+func (q *Queries) AssignCourseInstructor(ctx context.Context, arg AssignCourseInstructorParams) (CourseInstructor, error) {
+	row := q.db.QueryRow(ctx, assignCourseInstructor,
+		arg.TenantID,
+		arg.CourseID,
+		arg.FacultyID,
+		arg.Semester,
+	)
+	var i CourseInstructor
+	err := row.Scan(
+		&i.ID,
+		&i.TenantID,
+		&i.CourseID,
+		&i.FacultyID,
+		&i.Semester,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const countCourseInstructors = `-- name: CountCourseInstructors :one
+SELECT COUNT(*)::int AS count
+FROM course_instructors
+WHERE tenant_id = $1 AND course_id = $2 AND semester = $3
+`
+
+type CountCourseInstructorsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	CourseID uuid.UUID `json:"course_id"`
+	Semester string    `json:"semester"`
+}
+
+func (q *Queries) CountCourseInstructors(ctx context.Context, arg CountCourseInstructorsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countCourseInstructors, arg.TenantID, arg.CourseID, arg.Semester)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countCourseInstructorsAnySemester = `-- name: CountCourseInstructorsAnySemester :one
+SELECT COUNT(*)::int AS count
+FROM course_instructors
+WHERE tenant_id = $1 AND course_id = $2
+`
+
+type CountCourseInstructorsAnySemesterParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	CourseID uuid.UUID `json:"course_id"`
+}
+
+func (q *Queries) CountCourseInstructorsAnySemester(ctx context.Context, arg CountCourseInstructorsAnySemesterParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countCourseInstructorsAnySemester, arg.TenantID, arg.CourseID)
+	var count int32
+	err := row.Scan(&count)
+	return count, err
+}
 
 const createFaculty = `-- name: CreateFaculty :one
 INSERT INTO faculty (tenant_id, user_id, department_id, employee_id)
@@ -80,6 +151,52 @@ func (q *Queries) CreateStudent(ctx context.Context, arg CreateStudentParams) (S
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const facultyTeachesCourse = `-- name: FacultyTeachesCourse :one
+SELECT EXISTS (
+  SELECT 1 FROM course_instructors ci
+  WHERE ci.tenant_id = $1 AND ci.course_id = $2 AND ci.faculty_id = $3
+)::bool AS teaches
+`
+
+type FacultyTeachesCourseParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CourseID  uuid.UUID `json:"course_id"`
+	FacultyID uuid.UUID `json:"faculty_id"`
+}
+
+func (q *Queries) FacultyTeachesCourse(ctx context.Context, arg FacultyTeachesCourseParams) (bool, error) {
+	row := q.db.QueryRow(ctx, facultyTeachesCourse, arg.TenantID, arg.CourseID, arg.FacultyID)
+	var teaches bool
+	err := row.Scan(&teaches)
+	return teaches, err
+}
+
+const facultyTeachesCourseSemester = `-- name: FacultyTeachesCourseSemester :one
+SELECT EXISTS (
+  SELECT 1 FROM course_instructors ci
+  WHERE ci.tenant_id = $1 AND ci.course_id = $2 AND ci.semester = $3 AND ci.faculty_id = $4
+)::bool AS teaches
+`
+
+type FacultyTeachesCourseSemesterParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CourseID  uuid.UUID `json:"course_id"`
+	Semester  string    `json:"semester"`
+	FacultyID uuid.UUID `json:"faculty_id"`
+}
+
+func (q *Queries) FacultyTeachesCourseSemester(ctx context.Context, arg FacultyTeachesCourseSemesterParams) (bool, error) {
+	row := q.db.QueryRow(ctx, facultyTeachesCourseSemester,
+		arg.TenantID,
+		arg.CourseID,
+		arg.Semester,
+		arg.FacultyID,
+	)
+	var teaches bool
+	err := row.Scan(&teaches)
+	return teaches, err
 }
 
 const getFacultyByUserID = `-- name: GetFacultyByUserID :one
@@ -155,6 +272,149 @@ func (q *Queries) GetStudentByUserID(ctx context.Context, arg GetStudentByUserID
 	return i, err
 }
 
+const listCourseInstructors = `-- name: ListCourseInstructors :many
+SELECT ci.id, ci.course_id, ci.faculty_id, ci.semester, ci.created_at,
+       u.full_name, u.email, f.employee_id
+FROM course_instructors ci
+JOIN faculty f ON f.id = ci.faculty_id
+JOIN users u ON u.id = f.user_id
+WHERE ci.tenant_id = $1 AND ci.course_id = $2 AND ci.semester = $3
+ORDER BY u.full_name
+`
+
+type ListCourseInstructorsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	CourseID uuid.UUID `json:"course_id"`
+	Semester string    `json:"semester"`
+}
+
+type ListCourseInstructorsRow struct {
+	ID         uuid.UUID   `json:"id"`
+	CourseID   uuid.UUID   `json:"course_id"`
+	FacultyID  uuid.UUID   `json:"faculty_id"`
+	Semester   string      `json:"semester"`
+	CreatedAt  time.Time   `json:"created_at"`
+	FullName   string      `json:"full_name"`
+	Email      string      `json:"email"`
+	EmployeeID pgtype.Text `json:"employee_id"`
+}
+
+func (q *Queries) ListCourseInstructors(ctx context.Context, arg ListCourseInstructorsParams) ([]ListCourseInstructorsRow, error) {
+	rows, err := q.db.Query(ctx, listCourseInstructors, arg.TenantID, arg.CourseID, arg.Semester)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCourseInstructorsRow{}
+	for rows.Next() {
+		var i ListCourseInstructorsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CourseID,
+			&i.FacultyID,
+			&i.Semester,
+			&i.CreatedAt,
+			&i.FullName,
+			&i.Email,
+			&i.EmployeeID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCoursesForFacultyUser = `-- name: ListCoursesForFacultyUser :many
+SELECT DISTINCT c.id, c.tenant_id, c.code, c.name, c.credits, c.department_id, c.seat_cap, c.created_at
+FROM courses c
+JOIN course_instructors ci ON ci.course_id = c.id AND ci.tenant_id = c.tenant_id
+JOIN faculty f ON f.id = ci.faculty_id
+WHERE c.tenant_id = $1 AND f.user_id = $2
+ORDER BY c.code
+`
+
+type ListCoursesForFacultyUserParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	UserID   uuid.UUID `json:"user_id"`
+}
+
+func (q *Queries) ListCoursesForFacultyUser(ctx context.Context, arg ListCoursesForFacultyUserParams) ([]Course, error) {
+	rows, err := q.db.Query(ctx, listCoursesForFacultyUser, arg.TenantID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Course{}
+	for rows.Next() {
+		var i Course
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.Code,
+			&i.Name,
+			&i.Credits,
+			&i.DepartmentID,
+			&i.SeatCap,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFaculty = `-- name: ListFaculty :many
+SELECT f.id, f.user_id, f.department_id, f.employee_id, u.full_name, u.email
+FROM faculty f
+JOIN users u ON u.id = f.user_id
+WHERE f.tenant_id = $1
+ORDER BY u.full_name
+`
+
+type ListFacultyRow struct {
+	ID           uuid.UUID   `json:"id"`
+	UserID       uuid.UUID   `json:"user_id"`
+	DepartmentID pgtype.UUID `json:"department_id"`
+	EmployeeID   pgtype.Text `json:"employee_id"`
+	FullName     string      `json:"full_name"`
+	Email        string      `json:"email"`
+}
+
+func (q *Queries) ListFaculty(ctx context.Context, tenantID uuid.UUID) ([]ListFacultyRow, error) {
+	rows, err := q.db.Query(ctx, listFaculty, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListFacultyRow{}
+	for rows.Next() {
+		var i ListFacultyRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.DepartmentID,
+			&i.EmployeeID,
+			&i.FullName,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listStudents = `-- name: ListStudents :many
 SELECT id, tenant_id, user_id, roll_number, program, batch_year, department_id, created_at FROM students WHERE tenant_id = $1 ORDER BY roll_number
 `
@@ -186,4 +446,26 @@ func (q *Queries) ListStudents(ctx context.Context, tenantID uuid.UUID) ([]Stude
 		return nil, err
 	}
 	return items, nil
+}
+
+const removeCourseInstructor = `-- name: RemoveCourseInstructor :exec
+DELETE FROM course_instructors
+WHERE tenant_id = $1 AND course_id = $2 AND faculty_id = $3 AND semester = $4
+`
+
+type RemoveCourseInstructorParams struct {
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CourseID  uuid.UUID `json:"course_id"`
+	FacultyID uuid.UUID `json:"faculty_id"`
+	Semester  string    `json:"semester"`
+}
+
+func (q *Queries) RemoveCourseInstructor(ctx context.Context, arg RemoveCourseInstructorParams) error {
+	_, err := q.db.Exec(ctx, removeCourseInstructor,
+		arg.TenantID,
+		arg.CourseID,
+		arg.FacultyID,
+		arg.Semester,
+	)
+	return err
 }

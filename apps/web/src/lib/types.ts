@@ -93,6 +93,11 @@ export type Announcement = {
   title: string;
   body: string;
   audience_scope?: string;
+  audience_filter?: {
+    program?: string;
+    batch_year?: number;
+    course_id?: string;
+  };
   created_at?: string;
   [key: string]: unknown;
 };
@@ -187,6 +192,40 @@ export type AttendanceMark = {
 };
 
 export type AttendanceSessionResponse = { marks: AttendanceMark[] };
+
+export type FacultyMember = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  email: string;
+  employee_id?: string | { String?: string; Valid?: boolean } | null;
+};
+
+export type FacultyResponse = { faculty: FacultyMember[] };
+
+export type CourseInstructor = {
+  id: string;
+  course_id: string;
+  faculty_id: string;
+  semester: string;
+  full_name: string;
+  email: string;
+};
+
+export type InstructorsResponse = { instructors: CourseInstructor[] };
+
+export type BulkJob = {
+  id: string;
+  job_type: string;
+  status: string;
+  total_rows: number;
+  success_rows: number;
+  error_report?: unknown;
+  created_at?: string;
+  completed_at?: string | null;
+};
+
+export type BulkJobsResponse = { jobs: BulkJob[] };
 
 export type CourseResultRow = {
   id?: string;

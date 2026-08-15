@@ -245,6 +245,133 @@ func (s *AcademicService) ListMyEnrollments(ctx context.Context, tenantID, stude
 	return out, fmtErr("list enrollments", err)
 }
 
+func (s *AcademicService) ListFaculty(ctx context.Context, tenantID uuid.UUID) ([]sqlcdb.ListFacultyRow, error) {
+	var out []sqlcdb.ListFacultyRow
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var err error
+		out, err = q.ListFaculty(ctx, tenantID)
+		return err
+	})
+	return out, fmtErr("list faculty", err)
+}
+
+func (s *AcademicService) AssignInstructor(ctx context.Context, tenantID, courseID, facultyID uuid.UUID, semester string) (sqlcdb.CourseInstructor, error) {
+	var out sqlcdb.CourseInstructor
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		if _, err := q.GetCourseByID(ctx, sqlcdb.GetCourseByIDParams{TenantID: tenantID, ID: courseID}); err != nil {
+			return err
+		}
+		var err error
+		out, err = q.AssignCourseInstructor(ctx, sqlcdb.AssignCourseInstructorParams{
+			TenantID:  tenantID,
+			CourseID:  courseID,
+			FacultyID: facultyID,
+			Semester:  semester,
+		})
+		return err
+	})
+	return out, fmtErr("assign instructor", err)
+}
+
+func (s *AcademicService) RemoveInstructor(ctx context.Context, tenantID, courseID, facultyID uuid.UUID, semester string) error {
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		return q.RemoveCourseInstructor(ctx, sqlcdb.RemoveCourseInstructorParams{
+			TenantID:  tenantID,
+			CourseID:  courseID,
+			FacultyID: facultyID,
+			Semester:  semester,
+		})
+	})
+	return fmtErr("remove instructor", err)
+}
+
+func (s *AcademicService) ListInstructors(ctx context.Context, tenantID, courseID uuid.UUID, semester string) ([]sqlcdb.ListCourseInstructorsRow, error) {
+	var out []sqlcdb.ListCourseInstructorsRow
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var err error
+		out, err = q.ListCourseInstructors(ctx, sqlcdb.ListCourseInstructorsParams{
+			TenantID: tenantID,
+			CourseID: courseID,
+			Semester: semester,
+		})
+		return err
+	})
+	return out, fmtErr("list instructors", err)
+}
+
+func (s *AcademicService) ListCoursesForUser(ctx context.Context, tenantID, userID uuid.UUID, role string) ([]sqlcdb.Course, error) {
+	if role != "faculty" {
+		return s.ListCourses(ctx, tenantID)
+	}
+	var assigned []sqlcdb.Course
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var err error
+		assigned, err = q.ListCoursesForFacultyUser(ctx, sqlcdb.ListCoursesForFacultyUserParams{
+			TenantID: tenantID,
+			UserID:   userID,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, fmtErr("list faculty courses", err)
+	}
+	if len(assigned) > 0 {
+		return assigned, nil
+	}
+	return s.ListCourses(ctx, tenantID)
+}
+
+// AssertFacultyTeaches is a no-op when the course has no instructors assigned.
+func (s *AcademicService) AssertFacultyTeaches(ctx context.Context, tenantID, userID, courseID uuid.UUID, semester string) error {
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		fac, err := q.GetFacultyByUserID(ctx, sqlcdb.GetFacultyByUserIDParams{TenantID: tenantID, UserID: userID})
+		if err != nil {
+			return ErrForbidden
+		}
+		if semester != "" {
+			n, err := q.CountCourseInstructors(ctx, sqlcdb.CountCourseInstructorsParams{
+				TenantID: tenantID, CourseID: courseID, Semester: semester,
+			})
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return nil
+			}
+			ok, err := q.FacultyTeachesCourseSemester(ctx, sqlcdb.FacultyTeachesCourseSemesterParams{
+				TenantID: tenantID, CourseID: courseID, Semester: semester, FacultyID: fac.ID,
+			})
+			if err != nil {
+				return err
+			}
+			if !ok {
+				return ErrForbidden
+			}
+			return nil
+		}
+		n, err := q.CountCourseInstructorsAnySemester(ctx, sqlcdb.CountCourseInstructorsAnySemesterParams{
+			TenantID: tenantID, CourseID: courseID,
+		})
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return nil
+		}
+		ok, err := q.FacultyTeachesCourse(ctx, sqlcdb.FacultyTeachesCourseParams{
+			TenantID: tenantID, CourseID: courseID, FacultyID: fac.ID,
+		})
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrForbidden
+		}
+		return nil
+	})
+	return fmtErr("assert faculty teaches", err)
+}
+
 type CreateTimetableSlotInput struct {
 	CourseID  uuid.UUID
 	Semester  string

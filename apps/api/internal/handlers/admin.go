@@ -75,6 +75,34 @@ func (h *AdminHandler) BulkImport(c *fiber.Ctx) error {
 	return JSON(c, fiber.StatusAccepted, fiber.Map{"job": job})
 }
 
+func (h *AdminHandler) GetBulkJob(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	id, err := parseUUIDParam(c, "id")
+	if err != nil {
+		return JSONError(c, fiber.StatusBadRequest, "INVALID_ID", "invalid job id")
+	}
+	job, err := h.svc.GetBulkJob(c.Context(), tenantID, id)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, job)
+}
+
+func (h *AdminHandler) ListBulkJobs(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	list, err := h.svc.ListBulkJobs(c.Context(), tenantID, 20)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"jobs": list})
+}
+
 func (h *AdminHandler) AuditLogs(c *fiber.Ctx) error {
 	tenantID, err := requireTenantID(c)
 	if err != nil {

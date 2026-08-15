@@ -63,7 +63,7 @@ func WriteSimplePDF(lines []string) ([]byte, error) {
 	objects = append(objects, []byte("<< /Type /Catalog /Pages 2 0 R >>"))
 	objects = append(objects, []byte("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"))
 	objects = append(objects, []byte("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>"))
-	objects = append(objects, []byte(fmt.Sprintf("<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream)))
+	objects = append(objects, fmt.Appendf(nil, "<< /Length %d >>\nstream\n%s\nendstream", len(stream), stream))
 	objects = append(objects, []byte("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"))
 
 	var buf bytes.Buffer
@@ -71,7 +71,7 @@ func WriteSimplePDF(lines []string) ([]byte, error) {
 	offsets := make([]int, len(objects)+1)
 	for i, obj := range objects {
 		offsets[i+1] = buf.Len()
-		buf.WriteString(strconv.Itoa(i+1) + " 0 obj\n")
+		buf.WriteString(strconv.Itoa(i + 1));buf.WriteString(" 0 obj\n")
 		buf.Write(obj)
 		buf.WriteString("\nendobj\n")
 	}
@@ -84,7 +84,7 @@ func WriteSimplePDF(lines []string) ([]byte, error) {
 	buf.WriteString("trailer\n")
 	buf.WriteString(fmt.Sprintf("<< /Size %d /Root 1 0 R >>\n", len(objects)+1))
 	buf.WriteString("startxref\n")
-	buf.WriteString(strconv.Itoa(xrefPos) + "\n")
+	buf.WriteString(strconv.Itoa(xrefPos));buf.WriteString("\n")
 	buf.WriteString("%%EOF\n")
 	return buf.Bytes(), nil
 }

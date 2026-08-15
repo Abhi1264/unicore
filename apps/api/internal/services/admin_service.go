@@ -167,6 +167,32 @@ func (s *AdminService) CreateBulkImportJob(ctx context.Context, tenantID uuid.UU
 	return job, fmtErr("create bulk job", err)
 }
 
+func (s *AdminService) GetBulkJob(ctx context.Context, tenantID, jobID uuid.UUID) (sqlcdb.BulkJob, error) {
+	var job sqlcdb.BulkJob
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var err error
+		job, err = q.GetBulkJob(ctx, sqlcdb.GetBulkJobParams{TenantID: tenantID, ID: jobID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	})
+	return job, fmtErr("get bulk job", err)
+}
+
+func (s *AdminService) ListBulkJobs(ctx context.Context, tenantID uuid.UUID, limit int32) ([]sqlcdb.BulkJob, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	var out []sqlcdb.BulkJob
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var err error
+		out, err = q.ListBulkJobs(ctx, sqlcdb.ListBulkJobsParams{TenantID: tenantID, Limit: limit})
+		return err
+	})
+	return out, fmtErr("list bulk jobs", err)
+}
+
 func (s *AdminService) ListAuditLogs(ctx context.Context, tenantID uuid.UUID, limit int32) ([]sqlcdb.AuditLog, error) {
 	if limit <= 0 {
 		limit = 100

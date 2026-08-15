@@ -107,6 +107,9 @@ func seedTenant(ctx context.Context, pool *db.Pool, ten sqlcdb.Tenant, cfg seedC
 			return err
 		}
 		stats.Courses = len(courses)
+		if err := ensureCourseInstructors(ctx, q, ten.ID, primaryFaculty.ID, courses); err != nil {
+			return err
+		}
 		if err := ensureRegWindow(ctx, q, ten.ID); err != nil {
 			return err
 		}
@@ -324,6 +327,23 @@ func ensureCourses(ctx context.Context, q *sqlcdb.Queries, tenantID uuid.UUID, d
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+func ensureCourseInstructors(ctx context.Context, q *sqlcdb.Queries, tenantID, facultyUserID uuid.UUID, courses []sqlcdb.Course) error {
+	fac, err := q.GetFacultyByUserID(ctx, sqlcdb.GetFacultyByUserIDParams{
+		TenantID: tenantID, UserID: facultyUserID,
+	})
+	if err != nil {
+		return err
+	}
+	for _, c := range courses {
+		if _, err := q.AssignCourseInstructor(ctx, sqlcdb.AssignCourseInstructorParams{
+			TenantID: tenantID, CourseID: c.ID, FacultyID: fac.ID, Semester: "2026S1",
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureRegWindow(ctx context.Context, q *sqlcdb.Queries, tenantID uuid.UUID) error {

@@ -205,20 +205,7 @@ func (w *worker) handleDocumentGenerate(msg []byte) error {
 		return err
 	}
 
-	var pdfBytes []byte
-	var err error
-	if p.Type == "fee_receipt" && p.PaymentID != uuid.Nil {
-		pdfBytes, err = pdf.GenerateReceipt(pdf.ReceiptInput{
-			PaymentID: p.PaymentID.String(),
-			PaidAt:    time.Now().UTC(),
-		})
-	} else {
-		pdfBytes, err = pdf.WriteSimplePDF([]string{
-			"Unicore Document",
-			"Type: " + p.Type,
-			"Student: " + p.StudentID.String(),
-		})
-	}
+	pdfBytes, err := w.buildDocumentPDF(ctx, p.TenantID, p.StudentID, p.Type, p.PaymentID)
 	if err != nil {
 		return err
 	}
@@ -254,6 +241,142 @@ func (w *worker) handleDocumentGenerate(msg []byte) error {
 		})
 		return err
 	})
+}
+
+func (w *worker) buildDocumentPDF(ctx context.Context, tenantID, studentID uuid.UUID, docType string, paymentID uuid.UUID) ([]byte, error) {
+	tenant, err := w.pool.Platform().GetTenantByID(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	institute := tenant.Name
+
+	var (
+		student       sqlcdb.Student
+		user          sqlcdb.User
+		gradingSystem = "cgpa"
+		branding      json.RawMessage
+	)
+	err = w.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var e error
+		student, e = q.GetStudentByID(ctx, sqlcdb.GetStudentByIDParams{TenantID: tenantID, ID: studentID})
+		if e != nil {
+			return e
+		}
+		user, e = q.GetUserByID(ctx, sqlcdb.GetUserByIDParams{TenantID: tenantID, ID: student.UserID})
+		if e != nil {
+			return e
+		}
+		if cfg, e := q.GetTenantConfig(ctx, tenantID); e == nil {
+			gradingSystem = cfg.GradingSystem
+			branding = cfg.Branding
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if name := brandingDisplayName(branding); name != "" {
+		institute = name
+	}
+
+	switch docType {
+	case "bonafide":
+		return pdf.GenerateBonafide(pdf.BonafideInput{
+			InstituteName: institute,
+			StudentName:   user.FullName,
+			RollNumber:    student.RollNumber,
+			Program:       student.Program,
+			BatchYear:     student.BatchYear,
+			GeneratedAt:   time.Now().UTC(),
+		})
+	case "marksheet":
+		var rows []pdf.MarksheetRow
+		var inputs []services.GradeInput
+		err = w.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+			list, e := q.ListPublishedResultsForStudent(ctx, sqlcdb.ListPublishedResultsForStudentParams{
+				TenantID: tenantID, StudentID: studentID,
+			})
+			if e != nil {
+				return e
+			}
+			for _, r := range list {
+				credits, _ := services.FloatFromNumeric(r.Credits)
+				marks := ""
+				gi := services.GradeInput{Grade: r.Grade, Credits: credits}
+				if m, ok := services.FloatFromNumeric(r.Marks); ok {
+					marks = strconv.FormatFloat(m, 'f', 1, 64)
+					gi.Marks = &m
+				}
+				if gp, ok := services.FloatFromNumeric(r.GradePoints); ok {
+					gi.GradePoints = &gp
+				}
+				inputs = append(inputs, gi)
+				rows = append(rows, pdf.MarksheetRow{
+					Code: r.CourseCode, Name: r.CourseName, Semester: r.Semester,
+					Grade: r.Grade, Credits: strconv.FormatFloat(credits, 'f', 1, 64), Marks: marks,
+				})
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		_, cumulative := services.ComputeCumulative(gradingSystem, inputs)
+		return pdf.GenerateMarksheet(pdf.MarksheetInput{
+			InstituteName: institute,
+			StudentName:   user.FullName,
+			RollNumber:    student.RollNumber,
+			Program:       student.Program,
+			BatchYear:     student.BatchYear,
+			GeneratedAt:   time.Now().UTC(),
+			Rows:          rows,
+			Cumulative:    cumulative,
+		})
+	case "fee_receipt":
+		in := pdf.ReceiptInput{
+			InstituteName: institute,
+			StudentName:   user.FullName,
+			RollNumber:    student.RollNumber,
+			PaymentID:     paymentID.String(),
+			PaidAt:        time.Now().UTC(),
+		}
+		if paymentID != uuid.Nil {
+			_ = w.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+				pay, e := q.GetFeePaymentByID(ctx, sqlcdb.GetFeePaymentByIDParams{TenantID: tenantID, ID: paymentID})
+				if e != nil {
+					return e
+				}
+				in.PaymentID = pay.ID.String()
+				if pay.PaidAt.Valid {
+					in.PaidAt = pay.PaidAt.Time
+				}
+				if pay.GatewayRef.Valid {
+					in.GatewayRef = pay.GatewayRef.String
+				}
+				if amt, ok := services.FloatFromNumeric(pay.Amount); ok {
+					in.Amount = strconv.FormatFloat(amt, 'f', 2, 64)
+				}
+				head, e := q.GetFeeHead(ctx, sqlcdb.GetFeeHeadParams{TenantID: tenantID, ID: pay.FeeHeadID})
+				if e == nil {
+					in.FeeHeadName = head.Name
+				}
+				return nil
+			})
+		}
+		return pdf.GenerateReceipt(in)
+	default:
+		return pdf.WriteSimplePDF([]string{"Unicore Document", "Type: " + docType})
+	}
+}
+
+func brandingDisplayName(raw json.RawMessage) string {
+	var b struct {
+		InstituteDisplayName string `json:"institute_display_name"`
+	}
+	if json.Unmarshal(raw, &b) != nil {
+		return ""
+	}
+	return strings.TrimSpace(b.InstituteDisplayName)
 }
 
 func (w *worker) handleBulkImport(msg []byte) error {
@@ -493,4 +616,3 @@ func optionalFloat(v string, min, max float64) (*float64, error) {
 	}
 	return &f, nil
 }
-

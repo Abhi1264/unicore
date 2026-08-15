@@ -15,7 +15,7 @@ import {
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
-import { CourseSelect, SemesterField } from "@/components/course-select";
+import { CourseSelect, DEFAULT_SEMESTER, SemesterField } from "@/components/course-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,7 +37,7 @@ function studentKey(s: RosterStudent): string {
 
 export default function FacultyAttendancePage() {
   const [courseId, setCourseId] = useState("");
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
   const [sessionDate, setSessionDate] = useState(
     () => new Date().toISOString().slice(0, 10),
   );
@@ -115,6 +115,7 @@ export default function FacultyAttendancePage() {
         method: "POST",
         body: {
           course_id: courseId,
+          semester,
           session_date: sessionDate,
           marks: roster.map((s) => ({
             student_id: studentKey(s),

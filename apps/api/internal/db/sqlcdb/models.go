@@ -69,6 +69,15 @@ type Course struct {
 	CreatedAt    time.Time      `json:"created_at"`
 }
 
+type CourseInstructor struct {
+	ID        uuid.UUID `json:"id"`
+	TenantID  uuid.UUID `json:"tenant_id"`
+	CourseID  uuid.UUID `json:"course_id"`
+	FacultyID uuid.UUID `json:"faculty_id"`
+	Semester  string    `json:"semester"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Department struct {
 	ID        uuid.UUID `json:"id"`
 	TenantID  uuid.UUID `json:"tenant_id"`

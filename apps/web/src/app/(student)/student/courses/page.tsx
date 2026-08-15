@@ -9,6 +9,7 @@ import {
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
+import { DEFAULT_SEMESTER } from "@/components/course-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/table";
 
 export default function StudentCoursesPage() {
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 

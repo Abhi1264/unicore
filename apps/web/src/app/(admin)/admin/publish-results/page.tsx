@@ -5,12 +5,12 @@ import { apiFetch } from "@/lib/api";
 import { errorMessage, useAsyncData } from "@/lib/use-async-data";
 import type { CoursesResponse } from "@/lib/types";
 import { ErrorBanner, PageHeader } from "@/components/nav-shell";
-import { CourseSelect, SemesterField } from "@/components/course-select";
+import { CourseSelect, DEFAULT_SEMESTER, SemesterField } from "@/components/course-select";
 import { Button } from "@/components/ui/button";
 
 export default function AdminPublishResultsPage() {
   const [courseId, setCourseId] = useState("");
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);

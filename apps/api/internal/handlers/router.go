@@ -106,6 +106,30 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 		middleware.RequireRoles(auth.RoleInstituteAdmin),
 		academicH.CreateCourse,
 	)
+	api.Get("/faculty",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin, auth.RoleFaculty),
+		academicH.ListFaculty,
+	)
+	api.Get("/courses/:courseId/instructors",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin, auth.RoleFaculty),
+		academicH.ListInstructors,
+	)
+	api.Post("/courses/:courseId/instructors",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin),
+		academicH.AssignInstructor,
+	)
+	api.Delete("/courses/:courseId/instructors",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin),
+		academicH.RemoveInstructor,
+	)
 	api.Post("/enrollments",
 		authenticated,
 		userThrottle,
@@ -229,6 +253,18 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 		writeThrottle,
 		middleware.RequireRoles(auth.RoleInstituteAdmin),
 		adminH.BulkImport,
+	)
+	api.Get("/admin/bulk-jobs",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin),
+		adminH.ListBulkJobs,
+	)
+	api.Get("/admin/bulk-jobs/:id",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleInstituteAdmin),
+		adminH.GetBulkJob,
 	)
 	api.Get("/admin/audit-logs",
 		authenticated,

@@ -194,3 +194,17 @@ func assertStudentInTenant(ctx context.Context, pool *db.Pool, tenantID, student
 		return err
 	})
 }
+
+func assertCanTeach(c *fiber.Ctx, pool *db.Pool, tenantID, courseID uuid.UUID, semester string) error {
+	claims, err := requireClaims(c)
+	if err != nil {
+		return err
+	}
+	if claims.Role != auth.RoleFaculty {
+		return nil
+	}
+	if err := services.NewAcademicService(pool).AssertFacultyTeaches(c.Context(), tenantID, claims.UserID, courseID, semester); err != nil {
+		return mapSvcError(c, err)
+	}
+	return nil
+}

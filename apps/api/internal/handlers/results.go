@@ -73,6 +73,9 @@ func (h *ResultsHandler) Enter(c *fiber.Ctx) error {
 	if err := requireSemester(body.Semester); err != nil {
 		return err
 	}
+	if err := assertCanTeach(c, h.pool, tenantID, body.CourseID, body.Semester); err != nil {
+		return err
+	}
 	if err := requireText("grade", body.Grade, 8); err != nil {
 		return err
 	}
@@ -126,6 +129,9 @@ func (h *ResultsHandler) EnterBatch(c *fiber.Ctx) error {
 		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "course_id is required")
 	}
 	if err := requireSemester(body.Semester); err != nil {
+		return err
+	}
+	if err := assertCanTeach(c, h.pool, tenantID, body.CourseID, body.Semester); err != nil {
 		return err
 	}
 	inputs := make([]services.EnterResultInput, 0, len(body.Rows))

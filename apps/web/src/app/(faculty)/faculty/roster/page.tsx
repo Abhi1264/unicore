@@ -9,7 +9,7 @@ import {
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
-import { CourseSelect, SemesterField } from "@/components/course-select";
+import { CourseSelect, DEFAULT_SEMESTER, SemesterField } from "@/components/course-select";
 import {
   Table,
   TableBody,
@@ -21,7 +21,7 @@ import {
 
 export default function FacultyRosterPage() {
   const [courseId, setCourseId] = useState("");
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
 
   const { data: catalog, error: catalogError, loading: catalogLoading } =
     useAsyncData(

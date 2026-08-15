@@ -353,6 +353,46 @@ func (q *Queries) ListAuditLogs(ctx context.Context, arg ListAuditLogsParams) ([
 	return items, nil
 }
 
+const listBulkJobs = `-- name: ListBulkJobs :many
+SELECT id, tenant_id, job_type, status, total_rows, success_rows, error_report, created_by, created_at, completed_at FROM bulk_jobs WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2
+`
+
+type ListBulkJobsParams struct {
+	TenantID uuid.UUID `json:"tenant_id"`
+	Limit    int32     `json:"limit"`
+}
+
+func (q *Queries) ListBulkJobs(ctx context.Context, arg ListBulkJobsParams) ([]BulkJob, error) {
+	rows, err := q.db.Query(ctx, listBulkJobs, arg.TenantID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BulkJob{}
+	for rows.Next() {
+		var i BulkJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.TenantID,
+			&i.JobType,
+			&i.Status,
+			&i.TotalRows,
+			&i.SuccessRows,
+			&i.ErrorReport,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPushSubscriptionsForTenant = `-- name: ListPushSubscriptionsForTenant :many
 SELECT id, tenant_id, user_id, endpoint, p256dh, auth, created_at FROM push_subscriptions WHERE tenant_id = $1
 `

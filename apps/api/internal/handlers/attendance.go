@@ -42,6 +42,9 @@ func (h *AttendanceHandler) Mark(c *fiber.Ctx) error {
 	if err := assertStudentInTenant(c.Context(), h.pool, tenantID, body.StudentID); err != nil {
 		return mapSvcError(c, err)
 	}
+	if err := assertCanTeach(c, h.pool, tenantID, body.CourseID, ""); err != nil {
+		return err
+	}
 	sessionDate, err := time.Parse("2006-01-02", body.SessionDate)
 	if err != nil {
 		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "session_date must be YYYY-MM-DD")
@@ -67,6 +70,7 @@ func (h *AttendanceHandler) MarkSession(c *fiber.Ctx) error {
 	}
 	var body struct {
 		CourseID    uuid.UUID              `json:"course_id"`
+		Semester    string                 `json:"semester"`
 		SessionDate string                 `json:"session_date"`
 		Marks       []services.SessionMark `json:"marks"`
 	}
@@ -75,6 +79,9 @@ func (h *AttendanceHandler) MarkSession(c *fiber.Ctx) error {
 	}
 	if body.CourseID == uuid.Nil {
 		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "course_id is required")
+	}
+	if err := assertCanTeach(c, h.pool, tenantID, body.CourseID, body.Semester); err != nil {
+		return err
 	}
 	sessionDate, err := time.Parse("2006-01-02", body.SessionDate)
 	if err != nil {

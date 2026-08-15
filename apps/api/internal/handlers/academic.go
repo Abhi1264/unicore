@@ -63,7 +63,11 @@ func (h *AcademicHandler) ListCourses(c *fiber.Ctx) error {
 	if err != nil {
 		return err
 	}
-	list, err := h.svc.ListCourses(c.Context(), tenantID)
+	claims, err := requireClaims(c)
+	if err != nil {
+		return err
+	}
+	list, err := h.svc.ListCoursesForUser(c.Context(), tenantID, claims.UserID, string(claims.Role))
 	if err != nil {
 		return mapSvcError(c, err)
 	}
@@ -378,4 +382,93 @@ func (h *AcademicHandler) GetOpenRegWindow(c *fiber.Ctx) error {
 		return mapSvcError(c, err)
 	}
 	return JSON(c, fiber.StatusOK, w)
+}
+
+func (h *AcademicHandler) ListFaculty(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	list, err := h.svc.ListFaculty(c.Context(), tenantID)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"faculty": list})
+}
+
+func (h *AcademicHandler) ListInstructors(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	courseID, err := parseUUIDParam(c, "courseId")
+	if err != nil {
+		return JSONError(c, fiber.StatusBadRequest, "INVALID_ID", "invalid course id")
+	}
+	semester := c.Query("semester")
+	if err := requireSemester(semester); err != nil {
+		return err
+	}
+	list, err := h.svc.ListInstructors(c.Context(), tenantID, courseID, semester)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"instructors": list})
+}
+
+func (h *AcademicHandler) AssignInstructor(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	courseID, err := parseUUIDParam(c, "courseId")
+	if err != nil {
+		return JSONError(c, fiber.StatusBadRequest, "INVALID_ID", "invalid course id")
+	}
+	var body struct {
+		FacultyID uuid.UUID `json:"faculty_id"`
+		Semester  string    `json:"semester"`
+	}
+	if err := parseBody(c, &body); err != nil {
+		return err
+	}
+	if body.FacultyID == uuid.Nil {
+		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "faculty_id is required")
+	}
+	if err := requireSemester(body.Semester); err != nil {
+		return err
+	}
+	row, err := h.svc.AssignInstructor(c.Context(), tenantID, courseID, body.FacultyID, body.Semester)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusCreated, row)
+}
+
+func (h *AcademicHandler) RemoveInstructor(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	courseID, err := parseUUIDParam(c, "courseId")
+	if err != nil {
+		return JSONError(c, fiber.StatusBadRequest, "INVALID_ID", "invalid course id")
+	}
+	var body struct {
+		FacultyID uuid.UUID `json:"faculty_id"`
+		Semester  string    `json:"semester"`
+	}
+	if err := parseBody(c, &body); err != nil {
+		return err
+	}
+	if body.FacultyID == uuid.Nil {
+		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "faculty_id is required")
+	}
+	if err := requireSemester(body.Semester); err != nil {
+		return err
+	}
+	if err := h.svc.RemoveInstructor(c.Context(), tenantID, courseID, body.FacultyID, body.Semester); err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"status": "ok"})
 }

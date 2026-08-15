@@ -4,6 +4,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { Course } from "@/lib/types";
 
+/** Matches the seeded academic term so demo data shows up without extra typing. */
+export const DEFAULT_SEMESTER = "2026S1";
+
 const selectClass =
   "h-11 w-full rounded-2xl border border-input bg-card px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30";
 

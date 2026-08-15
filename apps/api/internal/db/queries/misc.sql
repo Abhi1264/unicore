@@ -80,6 +80,9 @@ RETURNING *;
 -- name: GetBulkJob :one
 SELECT * FROM bulk_jobs WHERE tenant_id = $1 AND id = $2;
 
+-- name: ListBulkJobs :many
+SELECT * FROM bulk_jobs WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2;
+
 -- name: UpsertTenantUsage :exec
 INSERT INTO tenant_usage_daily (tenant_id, day, request_count, error_count, student_count)
 VALUES ($1, $2, $3, $4, $5)

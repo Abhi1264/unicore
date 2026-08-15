@@ -15,7 +15,7 @@ import {
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
-import { CourseSelect, SemesterField } from "@/components/course-select";
+import { CourseSelect, DEFAULT_SEMESTER, SemesterField } from "@/components/course-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,7 +38,7 @@ function studentKey(s: RosterStudent): string {
 
 export default function FacultyResultsPage() {
   const [courseId, setCourseId] = useState("");
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);

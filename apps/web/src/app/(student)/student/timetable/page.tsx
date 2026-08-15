@@ -9,7 +9,7 @@ import {
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
-import { SemesterField } from "@/components/course-select";
+import { DEFAULT_SEMESTER, SemesterField } from "@/components/course-select";
 import {
   Table,
   TableBody,
@@ -28,7 +28,7 @@ function slotsFrom(res: TimetableResponse | TimetableEntry[] | null | undefined)
 }
 
 export default function StudentTimetablePage() {
-  const [semester, setSemester] = useState("1");
+  const [semester, setSemester] = useState(DEFAULT_SEMESTER);
   const { data, error, loading } = useAsyncData(
     () =>
       apiFetch<TimetableResponse>(
