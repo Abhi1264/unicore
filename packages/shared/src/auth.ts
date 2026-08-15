@@ -36,7 +36,7 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 
 export const LoginResponseSchema = z.object({
   user: UserPublicSchema,
-  tokens: TokenPairSchema,
+  tokens: TokenPairSchema.optional(),
 });
 export type LoginResponse = z.infer<typeof LoginResponseSchema>;
 

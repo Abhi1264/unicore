@@ -1,18 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch, ApiRequestError } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
+import { errorMessage, useAsyncData } from "@/lib/use-async-data";
+import type { CoursesResponse } from "@/lib/types";
 import { ErrorBanner, PageHeader } from "@/components/nav-shell";
+import { CourseSelect, SemesterField } from "@/components/course-select";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 
 export default function AdminPublishResultsPage() {
   const [courseId, setCourseId] = useState("");
-  const [semester, setSemester] = useState("");
+  const [semester, setSemester] = useState("1");
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const { data: catalog, loading: catalogLoading } = useAsyncData(
+    () => apiFetch<CoursesResponse>("/api/v1/courses"),
+    [],
+    "Failed to load courses.",
+  );
+  const courses = catalog?.courses ?? [];
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -22,14 +30,11 @@ export default function AdminPublishResultsPage() {
     try {
       await apiFetch("/api/v1/results/publish", {
         method: "POST",
-        body: {
-          course_id: courseId,
-          semester: semester || undefined,
-        },
+        body: { course_id: courseId, semester },
       });
-      setOk("Results published for the selected course.");
+      setOk("Results published. Students can see them now.");
     } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Publish failed.");
+      setError(errorMessage(err, "Publish failed."));
     } finally {
       setLoading(false);
     }
@@ -47,26 +52,15 @@ export default function AdminPublishResultsPage() {
           {ok}
         </p>
       ) : null}
-      <form onSubmit={onSubmit} className="flex max-w-sm flex-col gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="course_id">Course ID</Label>
-          <Input
-            id="course_id"
-            required
-            value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="semester">Semester (optional)</Label>
-          <Input
-            id="semester"
-            value={semester}
-            onChange={(e) => setSemester(e.target.value)}
-            placeholder="e.g. 3"
-          />
-        </div>
-        <Button type="submit" disabled={loading}>
+      <form onSubmit={onSubmit} className="flex max-w-md flex-col gap-4">
+        <CourseSelect
+          courses={courses}
+          value={courseId}
+          onChange={setCourseId}
+          disabled={catalogLoading}
+        />
+        <SemesterField value={semester} onChange={setSemester} />
+        <Button type="submit" disabled={loading || !courseId}>
           {loading ? "Publishing…" : "Publish"}
         </Button>
       </form>

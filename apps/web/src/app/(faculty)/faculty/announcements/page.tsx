@@ -2,11 +2,11 @@
 
 import { AnnouncementsPanel } from "@/components/announcements-panel";
 
-export default function AdminAnnouncementsPage() {
+export default function FacultyAnnouncementsPage() {
   return (
     <AnnouncementsPanel
       title="Announcements"
-      description="Broadcast notices to campus audiences."
+      description="Post a notice to students. It appears on their home feed immediately."
     />
   );
 }

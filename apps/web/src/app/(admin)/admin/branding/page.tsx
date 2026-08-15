@@ -52,10 +52,12 @@ export default function AdminBrandingPage() {
       await apiFetch("/api/v1/tenants/current/branding", {
         method: "PATCH",
         body: {
-          primary_color: form.primary_color,
-          secondary_color: form.secondary_color || undefined,
-          institute_display_name: form.institute_display_name || undefined,
-          logo_url: form.logo_url || null,
+          branding: {
+            primary_color: form.primary_color,
+            secondary_color: form.secondary_color || undefined,
+            institute_display_name: form.institute_display_name || undefined,
+            logo_url: form.logo_url || null,
+          },
         },
       });
       setOk("Branding updated.");

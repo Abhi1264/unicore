@@ -205,6 +205,46 @@ func (s *AcademicService) ListRoster(ctx context.Context, tenantID, courseID uui
 	return out, fmtErr("list roster", err)
 }
 
+type MyEnrollment struct {
+	ID         uuid.UUID `json:"id"`
+	CourseID   uuid.UUID `json:"course_id"`
+	CourseCode string    `json:"course_code"`
+	CourseName string    `json:"course_name"`
+	Credits    float64   `json:"credits"`
+	SeatCap    int32     `json:"seat_cap"`
+	Semester   string    `json:"semester"`
+	Status     string    `json:"status"`
+}
+
+func (s *AcademicService) ListMyEnrollments(ctx context.Context, tenantID, studentID uuid.UUID) ([]MyEnrollment, error) {
+	var out []MyEnrollment
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		rows, err := q.ListStudentEnrollmentsWithCourse(ctx, sqlcdb.ListStudentEnrollmentsWithCourseParams{
+			TenantID:  tenantID,
+			StudentID: studentID,
+		})
+		if err != nil {
+			return err
+		}
+		out = make([]MyEnrollment, 0, len(rows))
+		for _, r := range rows {
+			credits, _ := FloatFromNumeric(r.Credits)
+			out = append(out, MyEnrollment{
+				ID:         r.ID,
+				CourseID:   r.CourseID,
+				CourseCode: r.CourseCode,
+				CourseName: r.CourseName,
+				Credits:    credits,
+				SeatCap:    r.SeatCap,
+				Semester:   r.Semester,
+				Status:     r.Status,
+			})
+		}
+		return nil
+	})
+	return out, fmtErr("list enrollments", err)
+}
+
 type CreateTimetableSlotInput struct {
 	CourseID  uuid.UUID
 	Semester  string

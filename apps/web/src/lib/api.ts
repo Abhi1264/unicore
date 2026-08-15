@@ -1,5 +1,5 @@
 import { ApiErrorSchema, type ApiError } from "@unicore/shared";
-import { getAccessToken, getRefreshToken, setTokens, clearSession } from "./auth";
+import { clearSession } from "./auth";
 
 export class ApiRequestError extends Error {
   status: number;
@@ -82,31 +82,28 @@ async function parseError(res: Response): Promise<ApiRequestError> {
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefresh(): Promise<boolean> {
-  const refresh = getRefreshToken();
-  if (!refresh) return false;
   try {
     const res = await fetch(`${apiBaseUrl()}/api/v1/auth/refresh`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refresh }),
     });
-    if (!res.ok) return false;
-    const tokens = (await res.json()) as {
-      access_token: string;
-      refresh_token: string;
-      token_type?: string;
-      expires_in: number;
-    };
-    setTokens({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      token_type: "Bearer",
-      expires_in: tokens.expires_in,
-    });
-    return true;
+    return res.ok;
   } catch {
     return false;
+  }
+}
+
+function applyCommonHeaders(
+  headers: Headers,
+  options: { idempotencyKey?: string },
+): void {
+  if (options.idempotencyKey) {
+    headers.set("Idempotency-Key", options.idempotencyKey);
+  }
+  if (!headers.has("X-Tenant-Slug")) {
+    const slug = tenantSlugFromLocation();
+    if (slug) headers.set("X-Tenant-Slug", slug);
   }
 }
 
@@ -118,22 +115,11 @@ export async function apiFetch<T = unknown>(
     options;
 
   const headers = new Headers(initHeaders);
-  // Do not set Content-Type on FormData — the browser must add the multipart boundary.
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   if (body !== undefined && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
-  if (idempotencyKey) {
-    headers.set("Idempotency-Key", idempotencyKey);
-  }
-  if (!headers.has("X-Tenant-Slug")) {
-    const slug = tenantSlugFromLocation();
-    if (slug) headers.set("X-Tenant-Slug", slug);
-  }
-  if (auth) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
+  applyCommonHeaders(headers, { idempotencyKey });
 
   const url = path.startsWith("http") ? path : `${apiBaseUrl()}${path}`;
 
@@ -160,8 +146,6 @@ export async function apiFetch<T = unknown>(
     }
     const ok = await refreshPromise;
     if (ok) {
-      const token = getAccessToken();
-      if (token) headers.set("Authorization", `Bearer ${token}`);
       res = await doFetch();
     } else {
       clearSession();
@@ -178,7 +162,7 @@ export async function apiFetch<T = unknown>(
   return JSON.parse(text) as T;
 }
 
-/** Downloads a protected file with the bearer token (nav alone would 401). */
+/** Downloads a protected file using the session cookie. */
 export async function downloadFile(
   path: string,
   filename: string,
@@ -186,8 +170,6 @@ export async function downloadFile(
   const headers = new Headers();
   const slug = tenantSlugFromLocation();
   if (slug) headers.set("X-Tenant-Slug", slug);
-  const token = getAccessToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     credentials: "include",
@@ -205,7 +187,6 @@ export async function downloadFile(
     a.click();
     a.remove();
   } finally {
-    // Delayed revoke: immediate revoke can cancel the download in some browsers.
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
 }

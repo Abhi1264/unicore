@@ -63,7 +63,7 @@ export default function AdminAuditPage() {
                       : "—"}
                   </TableCell>
                   <TableCell className="font-medium">{l.action ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{l.resource ?? "—"}</TableCell>
+                  <TableCell className="text-sm">{l.entity ?? l.resource ?? "—"}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {l.actor_id ?? "—"}
                   </TableCell>

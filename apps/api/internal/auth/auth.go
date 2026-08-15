@@ -133,9 +133,9 @@ func NewTokenService(accessSecret, refreshSecret string, accessTTL, refreshTTL t
 }
 
 const (
-	tokenIssuer      = "unicore"
-	audienceAccess   = "unicore:access"
-	audienceRefresh  = "unicore:refresh"
+	tokenIssuer     = "unicore"
+	audienceAccess  = "unicore:access"
+	audienceRefresh = "unicore:refresh"
 )
 
 func (t *TokenService) IssueAccess(userID, tenantID uuid.UUID, role Role, email string) (string, time.Time, error) {
@@ -229,4 +229,5 @@ func (t *TokenService) ParseRefresh(token string) (*Claims, error) {
 	return claims, nil
 }
 
+func (t *TokenService) AccessTTL() time.Duration  { return t.accessTTL }
 func (t *TokenService) RefreshTTL() time.Duration { return t.refreshTTL }

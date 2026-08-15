@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -136,6 +137,34 @@ func Load() (*Config, error) {
 
 func (c *Config) IsProduction() bool {
 	return strings.EqualFold(c.AppEnv, "production")
+}
+
+// OriginAllowed is the CORS / CSRF allow-list. Never matches "*".
+func (c *Config) OriginAllowed(origin string) bool {
+	if origin == "" {
+		return false
+	}
+	if c.WebURL != "" && origin == c.WebURL {
+		return true
+	}
+	for _, o := range strings.Split(c.CORSOrigins, ",") {
+		if o = strings.TrimSpace(o); o != "" && o == origin {
+			return true
+		}
+	}
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if !c.IsProduction() && (host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".localhost")) {
+		return true
+	}
+	if c.IsProduction() && u.Scheme != "https" {
+		return false
+	}
+	base := strings.ToLower(c.BaseDomain)
+	return base != "" && (host == base || strings.HasSuffix(host, "."+base))
 }
 
 // validateSecrets refuses placeholder or short signing keys.

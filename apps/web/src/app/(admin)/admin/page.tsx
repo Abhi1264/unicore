@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  CalendarBlank,
   Exam,
   Megaphone,
   Palette,
   Scroll,
   Student,
+  Table,
   UploadSimple,
   CurrencyInr,
 } from "@phosphor-icons/react";
@@ -21,6 +23,18 @@ const links: QuickLink[] = [
     title: "Courses",
     description: "Departments, seat caps, and structure",
     icon: Student,
+  },
+  {
+    href: "/admin/timetable",
+    title: "Timetable",
+    description: "Weekly slots, rooms, and hours",
+    icon: Table,
+  },
+  {
+    href: "/admin/registration",
+    title: "Registration",
+    description: "Open the window for course enrollment",
+    icon: CalendarBlank,
   },
   {
     href: "/admin/fees",

@@ -82,7 +82,11 @@ export type TimetableEntry = {
   [key: string]: unknown;
 };
 
-export type TimetableResponse = { entries?: TimetableEntry[]; timetable?: TimetableEntry[] };
+export type TimetableResponse = {
+  entries?: TimetableEntry[];
+  timetable?: TimetableEntry[];
+  slots?: TimetableEntry[];
+};
 
 export type Announcement = {
   id: string;
@@ -117,7 +121,8 @@ export type DocumentsResponse = { documents: DocumentRequest[] };
 export type TenantListItem = {
   id: string;
   name: string;
-  subdomain: string;
+  slug?: string;
+  subdomain?: string;
   status: string;
   created_at?: string;
   [key: string]: unknown;
@@ -140,19 +145,66 @@ export type AuditLog = {
   id: string;
   action?: string;
   actor_id?: string;
+  entity?: string;
   resource?: string;
   created_at?: string;
   [key: string]: unknown;
 };
 
+export type Enrollment = {
+  id: string;
+  course_id: string;
+  course_code: string;
+  course_name: string;
+  credits: number;
+  semester: string;
+  status: string;
+};
+
+export type EnrollmentsResponse = { enrollments: Enrollment[] };
+
 export type AuditLogsResponse = { logs: AuditLog[] };
 
 export type RosterStudent = {
-  id: string;
+  id?: string;
+  student_id: string;
+  roll_number?: string;
   enrollment_number?: string;
   full_name?: string;
   email?: string;
-  [key: string]: unknown;
+  program?: string;
+  batch_year?: number;
+  semester?: string;
 };
 
 export type RosterResponse = { students?: RosterStudent[]; roster?: RosterStudent[] };
+
+export type AttendanceMark = {
+  student_id: string;
+  status: "present" | "absent" | "late" | "excused";
+  roll_number?: string;
+  full_name?: string;
+};
+
+export type AttendanceSessionResponse = { marks: AttendanceMark[] };
+
+export type CourseResultRow = {
+  id?: string;
+  student_id: string;
+  roll_number?: string;
+  full_name?: string;
+  grade: string;
+  grade_points?: number | null;
+  marks?: number | null;
+  submission_status: string;
+};
+
+export type CourseResultsResponse = { results: CourseResultRow[] };
+
+export type RegistrationWindow = {
+  id?: string;
+  name?: string;
+  semester?: string;
+  opens_at?: string;
+  closes_at?: string;
+};

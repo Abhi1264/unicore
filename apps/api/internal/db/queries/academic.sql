@@ -54,6 +54,14 @@ SELECT * FROM enrollments
 WHERE tenant_id = $1 AND student_id = $2 AND status = 'active'
 ORDER BY created_at;
 
+-- name: ListStudentEnrollmentsWithCourse :many
+SELECT e.id, e.course_id, e.semester, e.status, e.created_at,
+       c.code AS course_code, c.name AS course_name, c.credits, c.seat_cap
+FROM enrollments e
+JOIN courses c ON c.id = e.course_id
+WHERE e.tenant_id = $1 AND e.student_id = $2 AND e.status = 'active'
+ORDER BY c.code;
+
 -- name: ListCourseRoster :many
 SELECT e.*, s.roll_number, s.program, s.batch_year, u.full_name, u.email
 FROM enrollments e

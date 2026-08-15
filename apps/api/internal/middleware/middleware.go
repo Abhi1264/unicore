@@ -183,14 +183,23 @@ func validSlug(s string) bool {
 	return true
 }
 
-// Authenticate validates the bearer token and binds it to the resolved tenant.
+func accessTokenFromRequest(c *fiber.Ctx) string {
+	h := c.Get("Authorization")
+	if strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	return c.Cookies(auth.AccessCookieName)
+}
+
+// Authenticate validates the access JWT from Authorization or the httpOnly cookie
+// and binds it to the resolved tenant.
 func Authenticate(tokens *auth.TokenService) fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		h := c.Get("Authorization")
-		if !strings.HasPrefix(h, "Bearer ") {
-			return fiber.NewError(fiber.StatusUnauthorized, "missing bearer token")
+		raw := accessTokenFromRequest(c)
+		if raw == "" {
+			return fiber.NewError(fiber.StatusUnauthorized, "missing credentials")
 		}
-		claims, err := tokens.ParseAccess(strings.TrimPrefix(h, "Bearer "))
+		claims, err := tokens.ParseAccess(raw)
 		if err != nil {
 			return fiber.NewError(fiber.StatusUnauthorized, "invalid token")
 		}
@@ -396,4 +405,50 @@ func TenantFromCtx(c *fiber.Ctx) (TenantInfo, bool) {
 func ClaimsFromCtx(c *fiber.Ctx) (*auth.Claims, bool) {
 	cl, ok := c.Locals(KeyClaims).(*auth.Claims)
 	return cl, ok
+}
+
+// RequireTrustedOrigin rejects cookie-authenticated mutations from unknown sites.
+// Bearer clients and the payment webhook skip the check (no browser cookie).
+func RequireTrustedOrigin(cfg *config.Config) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		switch c.Method() {
+		case fiber.MethodGet, fiber.MethodHead, fiber.MethodOptions:
+			return c.Next()
+		}
+		if c.Path() == "/api/v1/fees/confirm" {
+			return c.Next()
+		}
+		if strings.HasPrefix(c.Get("Authorization"), "Bearer ") {
+			return c.Next()
+		}
+		origin := c.Get("Origin")
+		if origin == "" {
+			if ref := c.Get("Referer"); ref != "" {
+				origin = originFromReferer(ref)
+			}
+		}
+		if origin == "" {
+			if cfg.IsProduction() {
+				return fiber.NewError(fiber.StatusForbidden, "untrusted origin")
+			}
+			return c.Next()
+		}
+		if !cfg.OriginAllowed(origin) {
+			return fiber.NewError(fiber.StatusForbidden, "untrusted origin")
+		}
+		return c.Next()
+	}
+}
+
+func originFromReferer(ref string) string {
+	schemeEnd := strings.Index(ref, "://")
+	if schemeEnd < 0 {
+		return ""
+	}
+	rest := ref[schemeEnd+3:]
+	slash := strings.Index(rest, "/")
+	if slash < 0 {
+		return ref
+	}
+	return ref[:schemeEnd+3+slash]
 }

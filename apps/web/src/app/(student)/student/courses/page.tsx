@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { errorMessage, useAsyncData } from "@/lib/use-async-data";
-import type { CoursesResponse } from "@/lib/types";
+import type { CoursesResponse, Enrollment, EnrollmentsResponse } from "@/lib/types";
 import {
   EmptyState,
   ErrorBanner,
@@ -23,8 +23,8 @@ import {
 
 export default function StudentCoursesPage() {
   const [semester, setSemester] = useState("1");
-  const [enrolling, setEnrolling] = useState<string | null>(null);
-  const [enrollError, setEnrollError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     data,
@@ -33,24 +33,33 @@ export default function StudentCoursesPage() {
     reload,
   } = useAsyncData(
     async () => {
-      // A closed registration window is an expected state rather than a
-      // failure, so it must not take the course list down with it.
-      const [courses, openWindow] = await Promise.all([
+      const [courses, mine, openWindow] = await Promise.all([
         apiFetch<CoursesResponse>("/api/v1/courses"),
-        apiFetch<unknown>("/api/v1/registration-windows/open").catch(() => null),
+        apiFetch<EnrollmentsResponse>("/api/v1/enrollments/me"),
+        apiFetch<unknown>(
+          `/api/v1/registration-windows/open?semester=${encodeURIComponent(semester)}`,
+        ).catch(() => null),
       ]);
-      return { courses: courses.courses ?? [], openWindow };
+      return {
+        courses: courses.courses ?? [],
+        enrollments: mine.enrollments ?? [],
+        openWindow,
+      };
     },
-    [],
+    [semester],
     "Failed to load courses.",
   );
   const courses = data?.courses ?? [];
+  const enrollments = data?.enrollments ?? [];
+  const enrolledIds = new Set(
+    enrollments.filter((e) => e.semester === semester).map((e) => e.course_id),
+  );
   const registrationOpen = Boolean(data?.openWindow);
-  const error = enrollError ?? loadError;
+  const error = actionError ?? loadError;
 
   async function enroll(courseId: string) {
-    setEnrolling(courseId);
-    setEnrollError(null);
+    setBusy(courseId);
+    setActionError(null);
     try {
       await apiFetch("/api/v1/enrollments", {
         method: "POST",
@@ -59,9 +68,25 @@ export default function StudentCoursesPage() {
       });
       reload();
     } catch (err) {
-      setEnrollError(errorMessage(err, "Enrollment could not be completed."));
+      setActionError(errorMessage(err, "Enrollment could not be completed."));
     } finally {
-      setEnrolling(null);
+      setBusy(null);
+    }
+  }
+
+  async function drop(row: Enrollment) {
+    setBusy(row.course_id);
+    setActionError(null);
+    try {
+      await apiFetch("/api/v1/enrollments/drop", {
+        method: "POST",
+        body: { course_id: row.course_id, semester: row.semester },
+      });
+      reload();
+    } catch (err) {
+      setActionError(errorMessage(err, "Could not drop this course."));
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -69,7 +94,7 @@ export default function StudentCoursesPage() {
     <div>
       <PageHeader
         title="Course registration"
-        description="Browse catalog courses and enroll while the window is open."
+        description="Enroll while the window is open. Dropped seats return to the pool."
       />
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -90,6 +115,52 @@ export default function StudentCoursesPage() {
         </p>
       </div>
 
+      <h2 className="mb-3 text-sm font-semibold tracking-tight text-foreground">
+        Your courses
+      </h2>
+      {loading ? (
+        <EmptyState message="Loading enrollments…" />
+      ) : enrollments.length === 0 ? (
+        <EmptyState message="You are not enrolled in any course yet." />
+      ) : (
+        <div className="mb-10 overflow-hidden rounded-2xl border border-border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Name</TableHead>
+                <TableHead>Semester</TableHead>
+                <TableHead className="text-right">Credits</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {enrollments.map((e) => (
+                <TableRow key={e.id}>
+                  <TableCell className="font-mono text-xs">{e.course_code}</TableCell>
+                  <TableCell className="font-medium">{e.course_name}</TableCell>
+                  <TableCell>{e.semester}</TableCell>
+                  <TableCell className="text-right tabular-nums">{e.credits}</TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy === e.course_id || !registrationOpen}
+                      onClick={() => void drop(e)}
+                    >
+                      {busy === e.course_id ? "Dropping…" : "Drop"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+
+      <h2 className="mb-3 text-sm font-semibold tracking-tight text-foreground">
+        Catalog
+      </h2>
       {loading ? (
         <EmptyState message="Loading courses…" />
       ) : courses.length === 0 ? (
@@ -107,25 +178,32 @@ export default function StudentCoursesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {courses.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-mono text-xs">{c.code}</TableCell>
-                  <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell className="text-right tabular-nums">{c.credits}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {c.seat_cap ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      disabled={enrolling === c.id}
-                      onClick={() => void enroll(c.id)}
-                    >
-                      {enrolling === c.id ? "Enrolling…" : "Enroll"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {courses.map((c) => {
+                const enrolled = enrolledIds.has(c.id);
+                return (
+                  <TableRow key={c.id}>
+                    <TableCell className="font-mono text-xs">{c.code}</TableCell>
+                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="text-right tabular-nums">{c.credits}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {c.seat_cap ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {enrolled ? (
+                        <span className="text-xs text-muted-foreground">Enrolled</span>
+                      ) : (
+                        <Button
+                          size="sm"
+                          disabled={busy === c.id || !registrationOpen}
+                          onClick={() => void enroll(c.id)}
+                        >
+                          {busy === c.id ? "Enrolling…" : "Enroll"}
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

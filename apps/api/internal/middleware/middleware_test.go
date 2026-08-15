@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -176,6 +177,74 @@ func TestAuthenticateRejectsMissingAndMalformedTokens(t *testing.T) {
 		if got := do(t, app, tok); got != fiber.StatusUnauthorized {
 			t.Fatalf("token %q got %d, want 401", tok, got)
 		}
+	}
+}
+
+func TestAuthenticateAcceptsAccessCookie(t *testing.T) {
+	tokens := tokenService()
+	tenantID := uuid.New()
+	tok, _, err := tokens.IssueAccess(uuid.New(), tenantID, auth.RoleStudent, "s@a.edu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := authApp(tokens, &TenantInfo{ID: tenantID, Slug: "a", Status: "active"}, false)
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: tok})
+	resp, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != fiber.StatusOK {
+		t.Fatalf("cookie auth got %d, want 200", resp.StatusCode)
+	}
+}
+
+func TestRequireTrustedOrigin(t *testing.T) {
+	cfg := &config.Config{
+		AppEnv:     "production",
+		BaseDomain: "unicore.app",
+		WebURL:     "https://app.unicore.app",
+	}
+	build := func() *fiber.App {
+		app := fiber.New()
+		app.Use(RequireTrustedOrigin(cfg))
+		app.Post("/api/v1/auth/login", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+		app.Post("/api/v1/fees/confirm", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
+		return app
+	}
+
+	post := func(path, origin, bearer string) int {
+		t.Helper()
+		req := httptest.NewRequest("POST", path, nil)
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := build().Test(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if got := post("/api/v1/auth/login", "", ""); got != fiber.StatusForbidden {
+		t.Fatalf("cookie-mode POST with no origin got %d, want 403", got)
+	}
+	if got := post("/api/v1/auth/login", "https://evil.example", ""); got != fiber.StatusForbidden {
+		t.Fatalf("foreign origin got %d, want 403", got)
+	}
+	if got := post("/api/v1/auth/login", "https://bitmesra.unicore.app", ""); got != fiber.StatusOK {
+		t.Fatalf("tenant origin got %d, want 200", got)
+	}
+	if got := post("/api/v1/auth/login", "", "tok"); got != fiber.StatusOK {
+		t.Fatalf("bearer client with no origin got %d, want 200", got)
+	}
+	if got := post("/api/v1/fees/confirm", "", ""); got != fiber.StatusOK {
+		t.Fatalf("payment webhook got %d, want 200", got)
 	}
 }
 

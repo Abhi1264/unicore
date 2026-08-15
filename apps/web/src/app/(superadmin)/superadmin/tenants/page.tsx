@@ -96,7 +96,7 @@ export default function SuperadminTenantsPage() {
               {tenants.map((t) => (
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{t.subdomain}</TableCell>
+                  <TableCell className="font-mono text-xs">{t.slug ?? t.subdomain}</TableCell>
                   <TableCell>
                     <Badge variant="secondary">{t.status}</Badge>
                   </TableCell>

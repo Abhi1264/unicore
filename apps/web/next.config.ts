@@ -12,10 +12,8 @@ const withPWA = withPWAInit({
 const apiOrigin = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
 /**
- * Session tokens live in localStorage, which means any script that executes on
- * the page can read them. A restrictive CSP is what keeps an injected script
- * from running in the first place, so it is load-bearing here rather than
- * defence in depth.
+ * Session JWTs live in httpOnly cookies. CSP still matters: it is what keeps
+ * an injected script from calling the API as the signed-in user.
  *
  * 'unsafe-inline' on style-src is required by Tailwind's runtime style
  * injection. script-src carries no such escape hatch; Next's inline bootstrap

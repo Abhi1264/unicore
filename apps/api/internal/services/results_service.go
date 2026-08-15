@@ -42,12 +42,12 @@ type ResultCourseRow struct {
 }
 
 type StudentResultsResponse struct {
-	StudentID        uuid.UUID         `json:"student_id"`
-	Semester         string            `json:"semester,omitempty"`
-	GradingSystem    string            `json:"grading_system"`
-	Rows             []ResultCourseRow `json:"rows"`
-	CumulativeValue  float64           `json:"cumulative_value"`
-	CumulativeDisplay string           `json:"cumulative_display"`
+	StudentID         uuid.UUID         `json:"student_id"`
+	Semester          string            `json:"semester,omitempty"`
+	GradingSystem     string            `json:"grading_system"`
+	Rows              []ResultCourseRow `json:"rows"`
+	CumulativeValue   float64           `json:"cumulative_value"`
+	CumulativeDisplay string            `json:"cumulative_display"`
 }
 
 type EnterResultInput struct {
@@ -102,9 +102,9 @@ func (s *ResultsService) GetStudentResults(ctx context.Context, tenantID, studen
 
 func (s *ResultsService) loadStudentResults(ctx context.Context, tenantID, studentID uuid.UUID, semester *string) (StudentResultsResponse, error) {
 	var (
-		rows            []ResultCourseRow
-		gradingSystem   = "cgpa"
-		inputs          []GradeInput
+		rows          []ResultCourseRow
+		gradingSystem = "cgpa"
+		inputs        []GradeInput
 	)
 
 	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
@@ -269,6 +269,104 @@ func (s *ResultsService) EnterResult(ctx context.Context, tenantID uuid.UUID, in
 		return sqlcdb.Result{}, fmtErr("enter result", err)
 	}
 	return result, nil
+}
+
+const maxResultBatch = 500
+
+type CourseResultRow struct {
+	ID               uuid.UUID `json:"id"`
+	StudentID        uuid.UUID `json:"student_id"`
+	RollNumber       string    `json:"roll_number"`
+	FullName         string    `json:"full_name"`
+	Grade            string    `json:"grade"`
+	GradePoints      *float64  `json:"grade_points,omitempty"`
+	Marks            *float64  `json:"marks,omitempty"`
+	SubmissionStatus string    `json:"submission_status"`
+}
+
+func (s *ResultsService) ListCourseResults(ctx context.Context, tenantID, courseID uuid.UUID, semester string) ([]CourseResultRow, error) {
+	var out []CourseResultRow
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		rows, err := q.ListResultsForCourseSemester(ctx, sqlcdb.ListResultsForCourseSemesterParams{
+			TenantID: tenantID,
+			CourseID: courseID,
+			Semester: semester,
+		})
+		if err != nil {
+			return err
+		}
+		out = make([]CourseResultRow, 0, len(rows))
+		for _, r := range rows {
+			row := CourseResultRow{
+				ID:               r.ID,
+				StudentID:        r.StudentID,
+				RollNumber:       r.RollNumber,
+				FullName:         r.FullName,
+				Grade:            r.Grade,
+				SubmissionStatus: r.SubmissionStatus,
+			}
+			if gp, ok := FloatFromNumeric(r.GradePoints); ok {
+				row.GradePoints = &gp
+			}
+			if m, ok := FloatFromNumeric(r.Marks); ok {
+				row.Marks = &m
+			}
+			out = append(out, row)
+		}
+		return nil
+	})
+	return out, fmtErr("list course results", err)
+}
+
+func (s *ResultsService) EnterResults(ctx context.Context, tenantID uuid.UUID, rows []EnterResultInput) ([]sqlcdb.Result, error) {
+	if len(rows) == 0 || len(rows) > maxResultBatch {
+		return nil, fmt.Errorf("%w: batch must include 1-%d results", ErrInvalidInput, maxResultBatch)
+	}
+	out := make([]sqlcdb.Result, 0, len(rows))
+	err := s.pool.WithTenant(ctx, tenantID, func(ctx context.Context, q *sqlcdb.Queries) error {
+		var actor uuid.UUID
+		for _, in := range rows {
+			status := in.Status
+			if status == "" {
+				status = "draft"
+			}
+			if status != "draft" && status != "submitted" {
+				return ErrInvalidInput
+			}
+			if in.StudentID == uuid.Nil || in.CourseID == uuid.Nil {
+				return ErrInvalidInput
+			}
+			result, err := q.UpsertResult(ctx, sqlcdb.UpsertResultParams{
+				TenantID:         tenantID,
+				StudentID:        in.StudentID,
+				CourseID:         in.CourseID,
+				Semester:         in.Semester,
+				Grade:            in.Grade,
+				GradePoints:      NumericFromFloatPtr(in.GradePoints),
+				Marks:            NumericFromFloatPtr(in.Marks),
+				SubmissionStatus: status,
+				EnteredBy:        UUID(in.EnteredBy),
+			})
+			if err != nil {
+				return err
+			}
+			actor = in.EnteredBy
+			out = append(out, result)
+		}
+		meta, _ := json.Marshal(map[string]any{"count": len(out), "course_id": rows[0].CourseID, "semester": rows[0].Semester})
+		return q.InsertAuditLog(ctx, sqlcdb.InsertAuditLogParams{
+			TenantID: tenantID,
+			ActorID:  UUID(actor),
+			Action:   "results.enter_batch",
+			Entity:   "course",
+			EntityID: UUID(rows[0].CourseID),
+			Metadata: meta,
+		})
+	})
+	if err != nil {
+		return nil, fmtErr("enter results", err)
+	}
+	return out, nil
 }
 
 func (s *ResultsService) PublishCourseResults(ctx context.Context, tenantID, courseID uuid.UUID, semester string, actorID uuid.UUID) ([]sqlcdb.Result, error) {

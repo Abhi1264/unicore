@@ -99,6 +99,90 @@ func (h *ResultsHandler) Enter(c *fiber.Ctx) error {
 	return JSON(c, fiber.StatusCreated, row)
 }
 
+func (h *ResultsHandler) EnterBatch(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	claims, err := requireClaims(c)
+	if err != nil {
+		return err
+	}
+	var body struct {
+		CourseID uuid.UUID `json:"course_id"`
+		Semester string    `json:"semester"`
+		Status   string    `json:"status"`
+		Rows     []struct {
+			StudentID   uuid.UUID `json:"student_id"`
+			Grade       string    `json:"grade"`
+			GradePoints *float64  `json:"grade_points"`
+			Marks       *float64  `json:"marks"`
+		} `json:"rows"`
+	}
+	if err := parseBody(c, &body); err != nil {
+		return err
+	}
+	if body.CourseID == uuid.Nil {
+		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "course_id is required")
+	}
+	if err := requireSemester(body.Semester); err != nil {
+		return err
+	}
+	inputs := make([]services.EnterResultInput, 0, len(body.Rows))
+	for _, row := range body.Rows {
+		if row.StudentID == uuid.Nil {
+			return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "student_id is required")
+		}
+		if err := requireText("grade", row.Grade, 8); err != nil {
+			return err
+		}
+		if err := boundedOptional("grade_points", row.GradePoints, 0, 10); err != nil {
+			return err
+		}
+		if err := boundedOptional("marks", row.Marks, 0, 1000); err != nil {
+			return err
+		}
+		if err := assertStudentInTenant(c.Context(), h.pool, tenantID, row.StudentID); err != nil {
+			return mapSvcError(c, err)
+		}
+		inputs = append(inputs, services.EnterResultInput{
+			StudentID:   row.StudentID,
+			CourseID:    body.CourseID,
+			Semester:    body.Semester,
+			Grade:       row.Grade,
+			GradePoints: row.GradePoints,
+			Marks:       row.Marks,
+			Status:      body.Status,
+			EnteredBy:   claims.UserID,
+		})
+	}
+	rows, err := h.svc.EnterResults(c.Context(), tenantID, inputs)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"results": rows})
+}
+
+func (h *ResultsHandler) ListCourse(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	courseID, err := uuid.Parse(c.Query("course_id"))
+	if err != nil || courseID == uuid.Nil {
+		return JSONError(c, fiber.StatusBadRequest, "VALIDATION_ERROR", "course_id is required")
+	}
+	semester := c.Query("semester")
+	if err := requireSemester(semester); err != nil {
+		return err
+	}
+	rows, err := h.svc.ListCourseResults(c.Context(), tenantID, courseID, semester)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"results": rows})
+}
+
 func (h *ResultsHandler) Publish(c *fiber.Ctx) error {
 	tenantID, err := requireTenantID(c)
 	if err != nil {

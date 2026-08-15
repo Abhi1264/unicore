@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardText, Exam, UsersThree } from "@phosphor-icons/react";
+import { ClipboardText, Exam, Megaphone, UsersThree } from "@phosphor-icons/react";
 import {
   DashboardGreeting,
   QuickLinkGrid,
@@ -25,6 +25,12 @@ const links: QuickLink[] = [
     title: "Course roster",
     description: "See enrolled students per course",
     icon: UsersThree,
+  },
+  {
+    href: "/faculty/announcements",
+    title: "Announcements",
+    description: "Post a notice to the campus feed",
+    icon: Megaphone,
   },
 ];
 

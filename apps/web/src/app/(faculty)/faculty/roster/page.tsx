@@ -1,16 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch, ApiRequestError } from "@/lib/api";
-import type { RosterResponse, RosterStudent } from "@/lib/types";
+import { apiFetch } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
+import type { CoursesResponse, RosterResponse, RosterStudent } from "@/lib/types";
 import {
   EmptyState,
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { CourseSelect, SemesterField } from "@/components/course-select";
 import {
   Table,
   TableBody,
@@ -22,67 +21,82 @@ import {
 
 export default function FacultyRosterPage() {
   const [courseId, setCourseId] = useState("");
-  const [students, setStudents] = useState<RosterStudent[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [semester, setSemester] = useState("1");
 
-  async function load(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
+  const { data: catalog, error: catalogError, loading: catalogLoading } =
+    useAsyncData(
+      () => apiFetch<CoursesResponse>("/api/v1/courses"),
+      [],
+      "Failed to load courses.",
+    );
+  const courses = catalog?.courses ?? [];
+
+  const {
+    data,
+    error: rosterError,
+    loading,
+  } = useAsyncData(
+    async () => {
+      if (!courseId) return { students: [] as RosterStudent[] };
       const res = await apiFetch<RosterResponse>(
-        `/api/v1/courses/${encodeURIComponent(courseId)}/roster`,
+        `/api/v1/courses/${encodeURIComponent(courseId)}/roster?semester=${encodeURIComponent(semester)}`,
       );
-      setStudents(res.students ?? res.roster ?? []);
-    } catch (err) {
-      setStudents([]);
-      setError(err instanceof ApiRequestError ? err.message : "Failed to load roster.");
-    } finally {
-      setLoading(false);
-    }
-  }
+      return { students: res.roster ?? res.students ?? [] };
+    },
+    [courseId, semester],
+    "Failed to load roster.",
+  );
+  const students = data?.students ?? [];
+  const error = catalogError ?? rosterError;
 
   return (
     <div>
-      <PageHeader title="Roster" description="Enrolled students for a course." />
+      <PageHeader
+        title="Roster"
+        description="Who is enrolled, by course and semester."
+      />
       {error ? <ErrorBanner message={error} /> : null}
-      <form onSubmit={load} className="mb-6 flex flex-wrap items-end gap-3">
-        <div className="space-y-2">
-          <Label htmlFor="courseId">Course ID</Label>
-          <Input
-            id="courseId"
-            required
+      <div className="mb-6 grid max-w-3xl gap-4 sm:grid-cols-3">
+        <div className="sm:col-span-2">
+          <CourseSelect
+            courses={courses}
             value={courseId}
-            onChange={(e) => setCourseId(e.target.value)}
-            className="w-72"
+            onChange={setCourseId}
+            disabled={catalogLoading}
           />
         </div>
-        <Button type="submit" disabled={loading}>
-          {loading ? "Loading…" : "Load roster"}
-        </Button>
-      </form>
-      {students.length === 0 ? (
-        <EmptyState message="Enter a course ID to view the roster." />
+        <SemesterField value={semester} onChange={setSemester} />
+      </div>
+      {!courseId ? (
+        <EmptyState message="Choose a course to view the roster." />
+      ) : loading ? (
+        <EmptyState message="Loading roster…" />
+      ) : students.length === 0 ? (
+        <EmptyState message="No students enrolled for that semester." />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Enrollment</TableHead>
+                <TableHead>Roll</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Program</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {students.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow key={s.student_id || s.id}>
                   <TableCell className="font-mono text-xs">
-                    {s.enrollment_number ?? s.id}
+                    {s.roll_number ?? s.enrollment_number ?? "—"}
                   </TableCell>
                   <TableCell className="font-medium">{s.full_name ?? "—"}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {s.email ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-sm">
+                    {s.program ?? "—"}
+                    {s.batch_year ? ` · ${s.batch_year}` : ""}
                   </TableCell>
                 </TableRow>
               ))}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { Icon } from "@phosphor-icons/react";
 import {
+  CalendarBlank,
   ChartBar,
   ClipboardText,
   CurrencyInr,
@@ -47,10 +48,13 @@ const ROLE_LINKS: Record<Role, NavLink[]> = {
     { href: "/faculty/attendance", label: "Attendance", icon: ClipboardText },
     { href: "/faculty/results", label: "Results", icon: Exam },
     { href: "/faculty/roster", label: "Roster", icon: UsersThree },
+    { href: "/faculty/announcements", label: "Announcements", icon: Megaphone },
   ],
   institute_admin: [
     { href: "/admin", label: "Home", icon: House },
     { href: "/admin/courses", label: "Courses", icon: Student },
+    { href: "/admin/timetable", label: "Timetable", icon: Table },
+    { href: "/admin/registration", label: "Registration", icon: CalendarBlank },
     { href: "/admin/fees", label: "Fees", icon: CurrencyInr },
     { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
     { href: "/admin/publish-results", label: "Publish", icon: Exam },

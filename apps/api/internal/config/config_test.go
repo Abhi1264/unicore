@@ -37,6 +37,32 @@ func TestProductionConfigAccepted(t *testing.T) {
 	}
 }
 
+func TestOriginAllowed(t *testing.T) {
+	prod := production()
+	prod.CORSOrigins = "https://custom.example"
+	allowed := []string{
+		"https://app.unicore.app",
+		"https://bitmesra.unicore.app",
+		"https://custom.example",
+	}
+	for _, o := range allowed {
+		if !prod.OriginAllowed(o) {
+			t.Fatalf("production should allow %q", o)
+		}
+	}
+	denied := []string{"", "https://evil.com", "http://app.unicore.app", "*"}
+	for _, o := range denied {
+		if prod.OriginAllowed(o) {
+			t.Fatalf("production must not allow %q", o)
+		}
+	}
+
+	dev := &Config{AppEnv: "development", BaseDomain: "localhost", WebURL: "http://localhost:3000"}
+	if !dev.OriginAllowed("http://bitmesra.localhost:3000") {
+		t.Fatal("development should allow tenant .localhost origins")
+	}
+}
+
 // The whole point of shipping working dev defaults is that they must never
 // survive into production.
 func TestProductionRejectsDevelopmentDefaults(t *testing.T) {

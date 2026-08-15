@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/Abhi1264/unicore/api/internal/auth"
@@ -8,6 +9,7 @@ import (
 	"github.com/Abhi1264/unicore/api/internal/services"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type AcademicHandler struct {
@@ -195,6 +197,26 @@ func (h *AcademicHandler) Drop(c *fiber.Ctx) error {
 	return JSON(c, fiber.StatusOK, enr)
 }
 
+func (h *AcademicHandler) MyEnrollments(c *fiber.Ctx) error {
+	tenantID, err := requireTenantID(c)
+	if err != nil {
+		return err
+	}
+	claims, err := requireClaims(c)
+	if err != nil {
+		return err
+	}
+	sid, err := studentIDForUser(c.Context(), h.pool, tenantID, claims.UserID)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	list, err := h.svc.ListMyEnrollments(c.Context(), tenantID, sid)
+	if err != nil {
+		return mapSvcError(c, err)
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"enrollments": list})
+}
+
 func (h *AcademicHandler) Roster(c *fiber.Ctx) error {
 	tenantID, err := requireTenantID(c)
 	if err != nil {
@@ -228,7 +250,25 @@ func (h *AcademicHandler) ListTimetable(c *fiber.Ctx) error {
 	if err != nil {
 		return mapSvcError(c, err)
 	}
-	return JSON(c, fiber.StatusOK, fiber.Map{"slots": list})
+	slots := make([]fiber.Map, 0, len(list))
+	for _, s := range list {
+		room := ""
+		if s.Room.Valid {
+			room = s.Room.String
+		}
+		slots = append(slots, fiber.Map{
+			"id":          s.ID,
+			"course_id":   s.CourseID,
+			"course_code": s.CourseCode,
+			"course_name": s.CourseName,
+			"semester":    s.Semester,
+			"day_of_week": s.DayOfWeek,
+			"start_time":  formatPGTime(s.StartTime),
+			"end_time":    formatPGTime(s.EndTime),
+			"room":        room,
+		})
+	}
+	return JSON(c, fiber.StatusOK, fiber.Map{"slots": slots, "entries": slots})
 }
 
 func (h *AcademicHandler) CreateTimetable(c *fiber.Ctx) error {
@@ -280,6 +320,16 @@ func (h *AcademicHandler) CreateTimetable(c *fiber.Ctx) error {
 
 func validClock(hour, minute int) bool {
 	return hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
+}
+
+func formatPGTime(t pgtype.Time) string {
+	if !t.Valid {
+		return ""
+	}
+	sec := t.Microseconds / 1_000_000
+	h := sec / 3600
+	m := (sec % 3600) / 60
+	return fmt.Sprintf("%02d:%02d", h, m)
 }
 
 func (h *AcademicHandler) CreateRegWindow(c *fiber.Ctx) error {

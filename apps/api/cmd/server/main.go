@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -103,7 +101,7 @@ func main() {
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
-		BodyLimit: int(cfg.MaxUploadBytes) + (1 << 20),
+		BodyLimit:    int(cfg.MaxUploadBytes) + (1 << 20),
 		// Only trust X-Forwarded-* from declared proxies (rate-limit IP integrity).
 		EnableTrustedProxyCheck: true,
 		ErrorHandler:            errorHandler(log),
@@ -111,17 +109,17 @@ func main() {
 
 	app.Use(recover.New())
 	app.Use(helmet.New(helmet.Config{
-		XSSProtection:         "0",
-		ContentTypeNosniff:    "nosniff",
-		XFrameOptions:         "DENY",
-		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		XSSProtection:           "0",
+		ContentTypeNosniff:      "nosniff",
+		XFrameOptions:           "DENY",
+		ReferrerPolicy:          "strict-origin-when-cross-origin",
 		CrossOriginOpenerPolicy: "same-origin",
-		HSTSMaxAge:            63072000,
-		HSTSPreloadEnabled:    cfg.IsProduction(),
+		HSTSMaxAge:              63072000,
+		HSTSPreloadEnabled:      cfg.IsProduction(),
 	}))
 	app.Use(cors.New(cors.Config{
-		AllowOriginsFunc: corsOriginAllowed(cfg),
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Tenant-Slug, Idempotency-Key, X-Signature",
+		AllowOriginsFunc: cfg.OriginAllowed,
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Request-ID, X-Tenant-Slug, Idempotency-Key, X-Signature, X-Auth-Mode",
 		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		ExposeHeaders:    "X-Request-ID, Retry-After, X-RateLimit-Limit, X-RateLimit-Remaining",
 		AllowCredentials: true,
@@ -157,8 +155,10 @@ var errorCodes = map[string]string{
 	"unknown tenant host":                   "TENANT_NOT_FOUND",
 	"tenant suspended":                      "TENANT_NOT_ACTIVE",
 	"missing bearer token":                  "UNAUTHORIZED",
+	"missing credentials":                   "UNAUTHORIZED",
 	"invalid token":                         "UNAUTHORIZED",
 	"unauthorized":                          "UNAUTHORIZED",
+	"untrusted origin":                      "FORBIDDEN",
 	"token tenant mismatch":                 "FORBIDDEN",
 	"insufficient role":                     "FORBIDDEN",
 	"superadmin must use the platform host": "FORBIDDEN",
@@ -188,41 +188,5 @@ func errorHandler(log *slog.Logger) fiber.ErrorHandler {
 			"error", err,
 		)
 		return handlers.JSONError(c, fiber.StatusInternalServerError, "INTERNAL", "internal error")
-	}
-}
-
-// corsOriginAllowed permits WebURL, CORS_ORIGINS, and hosts under BaseDomain (never "*").
-func corsOriginAllowed(cfg *config.Config) func(string) bool {
-	allowList := map[string]struct{}{}
-	if cfg.WebURL != "" {
-		allowList[cfg.WebURL] = struct{}{}
-	}
-	for _, o := range strings.Split(cfg.CORSOrigins, ",") {
-		if o = strings.TrimSpace(o); o != "" {
-			allowList[o] = struct{}{}
-		}
-	}
-	production := cfg.IsProduction()
-	base := strings.ToLower(cfg.BaseDomain)
-
-	return func(origin string) bool {
-		if origin == "" {
-			return false
-		}
-		if _, ok := allowList[origin]; ok {
-			return true
-		}
-		u, err := url.Parse(origin)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-			return false
-		}
-		host := strings.ToLower(u.Hostname())
-		if !production && (host == "localhost" || host == "127.0.0.1" || strings.HasSuffix(host, ".localhost")) {
-			return true
-		}
-		if production && u.Scheme != "https" {
-			return false
-		}
-		return base != "" && (host == base || strings.HasSuffix(host, "."+base))
 	}
 }

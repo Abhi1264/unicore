@@ -10,7 +10,7 @@ import (
 
 // Register wires all HTTP routes onto app.
 func Register(app *fiber.App, cfg *config.Config, deps Deps) {
-	authH := NewAuthHandler(deps.Auth, deps.Pool)
+	authH := NewAuthHandler(deps.Auth, deps.Pool, deps.Tokens, cfg.IsProduction())
 	tenantsH := NewTenantsHandler(deps.Admin, deps.Pool)
 	resultsH := NewResultsHandler(deps.Results, deps.Pool)
 	academicH := NewAcademicHandler(deps.Academic, deps.Pool)
@@ -31,6 +31,7 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 	app.Get("/metrics", MetricsGuard(cfg.MetricsToken, cfg.AppEnv == "development"), metrics.Handler())
 
 	api := app.Group("/api/v1")
+	api.Use(middleware.RequireTrustedOrigin(cfg))
 
 	api.Post("/auth/register-tenant", authThrottle, authH.RegisterTenant)
 	api.Post("/auth/login", authThrottle, authH.Login)
@@ -72,6 +73,18 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
 		resultsH.Enter,
 	)
+	api.Post("/results/batch",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
+		resultsH.EnterBatch,
+	)
+	api.Get("/results/course",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
+		resultsH.ListCourse,
+	)
 	api.Post("/results/publish",
 		authenticated,
 		userThrottle,
@@ -99,6 +112,12 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 		writeThrottle,
 		middleware.RequireRoles(auth.RoleStudent),
 		academicH.Enroll,
+	)
+	api.Get("/enrollments/me",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleStudent),
+		academicH.MyEnrollments,
 	)
 	api.Post("/enrollments/drop",
 		authenticated,
@@ -156,6 +175,18 @@ func Register(app *fiber.App, cfg *config.Config, deps Deps) {
 		userThrottle,
 		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
 		attendanceH.Mark,
+	)
+	api.Post("/attendance/session",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
+		attendanceH.MarkSession,
+	)
+	api.Get("/attendance/session",
+		authenticated,
+		userThrottle,
+		middleware.RequireRoles(auth.RoleFaculty, auth.RoleInstituteAdmin),
+		attendanceH.Session,
 	)
 	api.Get("/attendance/summary",
 		authenticated,

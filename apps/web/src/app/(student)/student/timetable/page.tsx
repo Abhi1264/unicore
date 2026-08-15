@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiFetch, ApiRequestError } from "@/lib/api";
+import { useState } from "react";
+import { apiFetch } from "@/lib/api";
+import { useAsyncData } from "@/lib/use-async-data";
 import type { TimetableEntry, TimetableResponse } from "@/lib/types";
 import {
   EmptyState,
   ErrorBanner,
   PageHeader,
 } from "@/components/nav-shell";
+import { SemesterField } from "@/components/course-select";
 import {
   Table,
   TableBody,
@@ -19,37 +21,35 @@ import {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-export default function StudentTimetablePage() {
-  const [entries, setEntries] = useState<TimetableEntry[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+function slotsFrom(res: TimetableResponse | TimetableEntry[] | null | undefined): TimetableEntry[] {
+  if (!res) return [];
+  if (Array.isArray(res)) return res;
+  return res.slots ?? res.entries ?? res.timetable ?? [];
+}
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await apiFetch<TimetableResponse | TimetableEntry[]>(
-          "/api/v1/timetable",
-        );
-        if (Array.isArray(res)) setEntries(res);
-        else setEntries(res.entries ?? res.timetable ?? []);
-      } catch (err) {
-        setError(
-          err instanceof ApiRequestError ? err.message : "Failed to load timetable.",
-        );
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+export default function StudentTimetablePage() {
+  const [semester, setSemester] = useState("1");
+  const { data, error, loading } = useAsyncData(
+    () =>
+      apiFetch<TimetableResponse>(
+        `/api/v1/timetable?semester=${encodeURIComponent(semester)}`,
+      ),
+    [semester],
+    "Failed to load timetable.",
+  );
+  const entries = slotsFrom(data);
 
   return (
     <div>
-      <PageHeader title="Timetable" description="Weekly class schedule." />
+      <PageHeader title="Timetable" description="Your weekly class schedule." />
       {error ? <ErrorBanner message={error} /> : null}
+      <div className="mb-6">
+        <SemesterField value={semester} onChange={setSemester} />
+      </div>
       {loading ? (
         <EmptyState message="Loading timetable…" />
       ) : entries.length === 0 ? (
-        <EmptyState message="No timetable entries." />
+        <EmptyState message="No timetable entries for this semester." />
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border bg-card">
           <Table>
@@ -71,7 +71,7 @@ export default function StudentTimetablePage() {
                   <TableRow key={e.id}>
                     <TableCell>{day}</TableCell>
                     <TableCell className="tabular-nums text-sm">
-                      {e.start_time} – {e.end_time}
+                      {String(e.start_time ?? "")} – {String(e.end_time ?? "")}
                     </TableCell>
                     <TableCell className="font-medium">
                       {e.course_code

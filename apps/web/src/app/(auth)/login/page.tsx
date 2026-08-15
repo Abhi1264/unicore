@@ -43,7 +43,7 @@ export default function LoginPage() {
         auth: false,
       });
       const data = LoginResponseSchema.parse(raw);
-      saveSession(data.user, data.tokens);
+      saveSession(data.user);
       router.push(homeForRole(data.user.role));
     } catch (err) {
       if (err instanceof ApiRequestError) {

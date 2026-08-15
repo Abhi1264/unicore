@@ -30,3 +30,12 @@ FROM results r
 JOIN courses c ON c.id = r.course_id
 WHERE r.tenant_id = $1 AND r.student_id = $2 AND r.semester = $3 AND r.submission_status = 'published'
 ORDER BY c.code;
+
+-- name: ListResultsForCourseSemester :many
+SELECT r.id, r.student_id, r.grade, r.grade_points, r.marks, r.submission_status,
+       s.roll_number, u.full_name
+FROM results r
+JOIN students s ON s.id = r.student_id
+JOIN users u ON u.id = s.user_id
+WHERE r.tenant_id = $1 AND r.course_id = $2 AND r.semester = $3
+ORDER BY s.roll_number;
