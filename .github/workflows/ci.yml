@@ -58,7 +58,7 @@ jobs:
         run: go build -o /tmp/unicore-server ./cmd/server && go build -o /tmp/unicore-worker ./cmd/worker
       - name: sqlc diff
         run: |
-          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.29.0
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
           sqlc diff
 
   web:

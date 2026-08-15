@@ -125,6 +125,7 @@ Config: `apps/api/sqlc.yaml`. Queries: `apps/api/internal/db/queries`. Generated
 
 ```bash
 cd apps/api
+go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 sqlc generate
 ```
 
